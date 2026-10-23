@@ -72,6 +72,8 @@ void GameViewDebugger::_session_started(Ref<EditorDebuggerSession> p_session) {
 		return;
 	}
 
+	bool is_native = EditorRunBar::get_singleton()->is_running_natively();
+
 	Dictionary settings;
 	settings["debugger/max_node_selection"] = EDITOR_GET("debugger/max_node_selection");
 	settings["editors/2d/selection_rectangle_color"] = EDITOR_GET("editors/2d/selection_rectangle_color");
@@ -83,11 +85,14 @@ void GameViewDebugger::_session_started(Ref<EditorDebuggerSession> p_session) {
 	settings["editors/polygon_editor/point_grab_radius"] = EDITOR_GET("editors/polygon_editor/point_grab_radius");
 	settings["canvas_item_editor/pan_view"] = DebuggerMarshalls::serialize_key_shortcut(ED_GET_SHORTCUT("canvas_item_editor/pan_view"));
 	settings["canvas_item_editor/cancel_transform"] = DebuggerMarshalls::serialize_key_shortcut(ED_GET_SHORTCUT("canvas_item_editor/cancel_transform"));
-	settings["accent_color"] = EditorNode::get_singleton()->get_editor_theme()->get_color(SNAME("accent_color"), EditorStringName(Editor));
 	settings["box_selection_fill_color"] = EditorNode::get_singleton()->get_editor_theme()->get_color(SNAME("box_selection_fill_color"), EditorStringName(Editor));
 	settings["box_selection_stroke_color"] = EditorNode::get_singleton()->get_editor_theme()->get_color(SNAME("box_selection_stroke_color"), EditorStringName(Editor));
-	settings["axis_x_color"] = EditorNode::get_singleton()->get_editor_theme()->get_color(SNAME("axis_x_color"), EditorStringName(Editor));
-	settings["axis_y_color"] = EditorNode::get_singleton()->get_editor_theme()->get_color(SNAME("axis_y_color"), EditorStringName(Editor));
+	if (!is_native) {
+		settings["accent_color"] = EditorNode::get_singleton()->get_editor_theme()->get_color(SNAME("accent_color"), EditorStringName(Editor));
+		settings["axis_x_color"] = EditorNode::get_singleton()->get_editor_theme()->get_color(SNAME("axis_x_color"), EditorStringName(Editor));
+		settings["axis_y_color"] = EditorNode::get_singleton()->get_editor_theme()->get_color(SNAME("axis_y_color"), EditorStringName(Editor));
+	}
+
 #ifndef _3D_DISABLED
 	settings["editors/3d/default_fov"] = EDITOR_GET("editors/3d/default_fov");
 	settings["editors/3d/default_z_near"] = EDITOR_GET("editors/3d/default_z_near");
@@ -141,7 +146,9 @@ void GameViewDebugger::_session_started(Ref<EditorDebuggerSession> p_session) {
 	p_session->send_message("scene:runtime_node_select_set_node_type", { node_type });
 	p_session->send_message("scene:runtime_node_select_set_selection_visible", { selection_visible });
 	p_session->send_message("scene:runtime_node_select_set_ci_tool", { ci_tool });
-	p_session->send_message("scene:runtime_node_select_set_ci_local_space", { ci_local_space });
+	if (!is_native) {
+		p_session->send_message("scene:runtime_node_select_set_ci_local_space", { ci_local_space });
+	}
 	p_session->send_message("scene:runtime_node_select_set_n3d_tool", { n3d_tool });
 	p_session->send_message("scene:runtime_node_select_set_avoid_locked", { selection_avoid_locked });
 	p_session->send_message("scene:runtime_node_select_set_prefer_group", { selection_prefer_group });
@@ -151,12 +158,14 @@ void GameViewDebugger::_session_started(Ref<EditorDebuggerSession> p_session) {
 	shortcut_settings["editor/suspend_resume_embedded_project"] = DebuggerMarshalls::serialize_key_shortcut(ED_GET_SHORTCUT("editor/suspend_resume_embedded_project"));
 	shortcut_settings["editor/next_frame_embedded_project"] = DebuggerMarshalls::serialize_key_shortcut(ED_GET_SHORTCUT("editor/next_frame_embedded_project"));
 	shortcut_settings["canvas_item_editor/select_mode"] = DebuggerMarshalls::serialize_key_shortcut(ED_GET_SHORTCUT("canvas_item_editor/select_mode"));
-	shortcut_settings["canvas_item_editor/move_mode"] = DebuggerMarshalls::serialize_key_shortcut(ED_GET_SHORTCUT("canvas_item_editor/move_mode"));
-	shortcut_settings["canvas_item_editor/rotate_mode"] = DebuggerMarshalls::serialize_key_shortcut(ED_GET_SHORTCUT("canvas_item_editor/rotate_mode"));
-	shortcut_settings["canvas_item_editor/scale_mode"] = DebuggerMarshalls::serialize_key_shortcut(ED_GET_SHORTCUT("canvas_item_editor/scale_mode"));
 	shortcut_settings["canvas_item_editor/pan_mode"] = DebuggerMarshalls::serialize_key_shortcut(ED_GET_SHORTCUT("canvas_item_editor/pan_mode"));
-	shortcut_settings["ui_undo"] = DebuggerMarshalls::serialize_key_shortcut(ED_GET_SHORTCUT("ui_undo"));
-	shortcut_settings["ui_redo"] = DebuggerMarshalls::serialize_key_shortcut(ED_GET_SHORTCUT("ui_redo"));
+	if (!is_native) {
+		shortcut_settings["canvas_item_editor/move_mode"] = DebuggerMarshalls::serialize_key_shortcut(ED_GET_SHORTCUT("canvas_item_editor/move_mode"));
+		shortcut_settings["canvas_item_editor/rotate_mode"] = DebuggerMarshalls::serialize_key_shortcut(ED_GET_SHORTCUT("canvas_item_editor/rotate_mode"));
+		shortcut_settings["canvas_item_editor/scale_mode"] = DebuggerMarshalls::serialize_key_shortcut(ED_GET_SHORTCUT("canvas_item_editor/scale_mode"));
+		shortcut_settings["ui_undo"] = DebuggerMarshalls::serialize_key_shortcut(ED_GET_SHORTCUT("ui_undo"));
+		shortcut_settings["ui_redo"] = DebuggerMarshalls::serialize_key_shortcut(ED_GET_SHORTCUT("ui_redo"));
+	}
 
 	p_session->send_message("scene:setup_embedded_shortcuts", { shortcut_settings });
 
@@ -498,6 +507,7 @@ void GameView::_sessions_changed() {
 		}
 	}
 
+	_update_ui();
 	_update_debugger_buttons();
 
 #ifdef MACOS_ENABLED
@@ -655,7 +665,9 @@ void GameView::_stop_pressed() {
 
 	screen_index_before_start = -1;
 
-	InspectorDock::get_inspector_singleton()->disconnect(SNAME("edited_object_changed"), callable_mp(this, &GameView::_inspector_object_changed));
+	if (InspectorDock::get_inspector_singleton()->is_connected(SNAME("edited_object_changed"), callable_mp(this, &GameView::_inspector_object_changed))) {
+		InspectorDock::get_inspector_singleton()->disconnect(SNAME("edited_object_changed"), callable_mp(this, &GameView::_inspector_object_changed));
+	}
 }
 
 void GameView::_embedding_completed() {
@@ -700,7 +712,8 @@ void GameView::_inspector_object_changed() {
 	EditorDebuggerRemoteObjects *robjs = nullptr;
 	Object *obj = InspectorDock::get_inspector_singleton()->get_edited_object();
 	robjs = Object::cast_to<EditorDebuggerRemoteObjects>(obj);
-	ci_button[CanvasItemManipulator::TOOL_EDIT_PIVOT]->set_disabled(!robjs || !robjs->has_canvas_items);
+	bool is_native = (active_sessions && EditorRunBar::get_singleton()->is_running_natively());
+	ci_button[CanvasItemManipulator::TOOL_EDIT_PIVOT]->set_disabled(!robjs || !robjs->has_canvas_items || is_native);
 }
 
 void GameView::_update_debugger_buttons() {
@@ -729,6 +742,19 @@ void GameView::_update_debugger_buttons() {
 	}
 
 	next_frame_button->set_disabled(!suspend_button->is_pressed());
+
+	// Node manipulation is disabled for native debug builds.
+	bool is_native = !empty && EditorRunBar::get_singleton()->is_running_natively();
+	for (int i = 0; i < CanvasItemManipulator::TOOL_MAX; i++) {
+		if (ci_button[i] &&
+				i != CanvasItemManipulator::TOOL_SELECT &&
+				i != CanvasItemManipulator::TOOL_LIST_SELECT &&
+				i != CanvasItemManipulator::TOOL_EDIT_PIVOT &&
+				i != CanvasItemManipulator::TOOL_PAN) {
+			ci_button[i]->set_disabled(is_native);
+		}
+	}
+	ci_local_space->set_disabled(is_native);
 
 	menu = game_window_options_menu->get_popup();
 	if (empty) {
@@ -843,8 +869,8 @@ void GameView::_game_window_options_menu_menu_id_pressed(int p_id) {
 			debugger->toggle_hdr_output_requested();
 		} break;
 	}
+
 	_update_embed_menu_options();
-	_update_ui();
 }
 
 void GameView::_reset_time_scales() {
@@ -1509,6 +1535,7 @@ GameView::GameView(Ref<GameViewDebugger> p_debugger, EmbeddedProcessBase *p_embe
 	game_dock->set_available_layouts(EditorDock::DOCK_LAYOUT_MAIN_SCREEN);
 	game_dock->set_default_slot(EditorDock::DOCK_SLOT_MAIN_SCREEN);
 	game_dock->set_dock_shortcut(ED_GET_SHORTCUT("editor/editor_game"));
+	dock_singleton = game_dock;
 
 	debugger = p_debugger;
 	window_wrapper = p_wrapper;
@@ -1715,7 +1742,7 @@ GameView::GameView(Ref<GameViewDebugger> p_debugger, EmbeddedProcessBase *p_embe
 	vsep->set_theme_type_variation("VSeparatorButtonGroup");
 	ci_bar->get_hbox()->add_child(vsep);
 
-	Button *ci_local_space = memnew(Button);
+	ci_local_space = memnew(Button);
 	ci_bar->get_hbox()->add_child(ci_local_space);
 	ci_local_space->set_button_icon(EditorIconManager::get_icon(SNAME("Object")));
 	ci_local_space->set_toggle_mode(true);
@@ -1881,27 +1908,6 @@ GameView::GameView(Ref<GameViewDebugger> p_debugger, EmbeddedProcessBase *p_embe
 
 ///////
 
-void GameViewPluginBase::make_visible(bool p_visible) {
-	if (p_visible) {
-#ifndef ANDROID_ENABLED
-		window_wrapper->show();
-#endif // ANDROID_ENABLED
-
-		if (_is_window_wrapper_enabled()) {
-#ifdef ANDROID_ENABLED
-			notify_main_screen_changed(get_plugin_name());
-#else
-			window_wrapper->grab_window_focus();
-#endif // ANDROID_ENABLED
-			_focus_another_editor();
-		}
-	} else {
-#ifndef ANDROID_ENABLED
-		window_wrapper->hide();
-#endif // ANDROID_ENABLED
-	}
-}
-
 #ifndef ANDROID_ENABLED
 void GameViewPluginBase::set_window_layout(Ref<ConfigFile> p_layout) {
 	game_view->set_window_layout(p_layout);
@@ -1922,11 +1928,15 @@ void GameViewPluginBase::setup(Ref<GameViewDebugger> p_debugger, EmbeddedProcess
 
 	window_wrapper->set_wrapped_control(game_view, nullptr);
 
-	GameView::get_dock()->add_child(window_wrapper);
+	EditorDock *game_dock = GameView::get_dock();
+	game_dock->add_child(window_wrapper);
+	game_dock->connect(SceneStringName(visibility_changed), callable_mp(this, &GameViewPluginBase::_dock_visibility_changed).bind(game_dock));
+	_create_empty_info_label(TTRC("The Game dock is embedded in a floating window and is not available here."));
+	empty_dock_info->hide();
 
 	EditorDockManager::get_singleton()->add_dock(GameView::get_dock());
 	window_wrapper->set_v_size_flags(Control::SIZE_EXPAND_FILL);
-	window_wrapper->connect("window_visibility_changed", callable_mp(this, &GameViewPlugin::_focus_another_editor).unbind(1));
+	window_wrapper->connect("window_visibility_changed", callable_mp(this, &GameViewPlugin::_window_visibility_changed));
 }
 
 #endif // ANDROID_ENABLED
@@ -1940,31 +1950,65 @@ void GameViewPluginBase::_notification(int p_what) {
 		} break;
 		case NOTIFICATION_ENTER_TREE: {
 			add_debugger_plugin(debugger);
-			connect("main_screen_changed", callable_mp(this, &GameViewPluginBase::_save_last_editor));
 		} break;
 		case NOTIFICATION_EXIT_TREE: {
 			remove_debugger_plugin(debugger);
-			disconnect("main_screen_changed", callable_mp(this, &GameViewPluginBase::_save_last_editor));
 		} break;
 	}
 }
 
-void GameViewPluginBase::_save_last_editor(const String &p_editor) {
-	if (p_editor != get_plugin_name()) {
-		last_editor = p_editor;
-	}
+void GameViewPluginBase::_bind_methods() {
+#ifdef ANDROID_ENABLED
+	ADD_SIGNAL(MethodInfo("show_android_game_dock"));
+#endif
+}
+
+void GameViewPluginBase::_window_visibility_changed(bool p_visible) {
+	empty_dock_info->set_visible(p_visible);
+	_focus_another_editor();
+}
+
+void GameViewPluginBase::_create_empty_info_label(const String &p_message) {
+	empty_dock_info = memnew(Label(p_message));
+	empty_dock_info->set_horizontal_alignment(HORIZONTAL_ALIGNMENT_CENTER);
+	empty_dock_info->set_vertical_alignment(VERTICAL_ALIGNMENT_CENTER);
+	empty_dock_info->set_autowrap_mode(TextServer::AUTOWRAP_WORD);
+	GameView::get_dock()->add_child(empty_dock_info);
 }
 
 void GameViewPluginBase::_focus_another_editor() {
-	if (_is_window_wrapper_enabled()) {
-		if (last_editor.is_empty() || (last_editor == "Script" && ScriptEditor::get_singleton()->get_current_layout() == EditorDock::DOCK_LAYOUT_FLOATING)) {
-			CanvasItemEditor::get_singleton()->make_visible();
-		} else {
-			EditorDock *last_dock = EditorDockManager::get_singleton()->get_dock_by_name(last_editor);
-			if (last_dock && last_dock->get_current_layout() == EditorDock::DOCK_LAYOUT_MAIN_SCREEN) {
-				last_dock->make_visible();
-			}
+	DockTabContainer *main_screen = EditorNode::get_editor_main_screen();
+	EditorDock *game_dock = GameView::get_dock();
+
+	if (main_screen->get_current_tab_control() != game_dock) {
+		// Already showing different screen, so nothing to do.
+		return;
+	}
+	EditorDock *prev_dock = main_screen->get_dock(main_screen->get_previous_tab());
+	if (prev_dock && prev_dock != game_dock && prev_dock->is_dock_open()) {
+		EditorDockManager::get_singleton()->force_focus_dock(prev_dock);
+		return;
+	}
+	// The above switch can still fail when a tab is closed. Try to open the first tab that isn't Game.
+	for (int i = 0; i < main_screen->get_tab_count(); i++) {
+		if (main_screen->get_dock(i) != game_dock) {
+			EditorDockManager::get_singleton()->force_focus_dock(main_screen->get_dock(i));
+			break;
 		}
+	}
+}
+
+void GameViewPluginBase::_dock_visibility_changed(EditorDock *p_dock) {
+	if (!p_dock->is_visible_in_tree()) {
+		return;
+	}
+	if (window_wrapper) {
+		if (EditorRunBar::get_singleton()->is_playing() && window_wrapper->get_window_enabled()) {
+			_focus_another_editor();
+			window_wrapper->grab_window_focus();
+		}
+	} else {
+		_focus_another_editor();
 	}
 }
 
@@ -2001,16 +2045,18 @@ void GameViewPluginBase::setup_android() {
 	game_dock->set_available_layouts(EditorDock::DOCK_LAYOUT_MAIN_SCREEN);
 	game_dock->set_default_slot(EditorDock::DOCK_SLOT_MAIN_SCREEN);
 	game_dock->set_dock_shortcut(ED_GET_SHORTCUT("editor/editor_game"));
-
+	GameView::dock_singleton = game_dock;
 	EditorDockManager::get_singleton()->add_dock(game_dock);
-	game_dock->get_parent_container()->connect("tab_changed", callable_mp(this, &GameViewPluginBase::_main_screen_tab_changed).bind(game_dock).unbind(1));
+	game_dock->connect(SceneStringName(visibility_changed), callable_mp(this, &GameViewPluginBase::_dock_visibility_changed).bind(game_dock));
+
+	// Add a button to invoke the Android Game dock.
+	Button *show_game_dock = memnew(Button(TTRC("Tap to show Game dock")));
+	show_game_dock->set_autowrap_mode(TextServer::AUTOWRAP_WORD);
+	show_game_dock->connect(SceneStringName(pressed), callable_mp(this, &GameViewPluginBase::_on_show_game_dock));
+	GameView::get_dock()->add_child(show_game_dock);
 }
 
-void GameViewPluginBase::_main_screen_tab_changed(EditorDock *game_dock) {
-	if (game_dock->is_visible_in_tree()) {
-		EditorNode::get_editor_main_screen()->set_current_tab(previous_tab);
-	} else {
-		previous_tab = EditorNode::get_editor_main_screen()->get_current_tab();
-	}
+void GameViewPluginBase::_on_show_game_dock() {
+	emit_signal(SNAME("show_android_game_dock"));
 }
 #endif

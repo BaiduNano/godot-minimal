@@ -132,6 +132,10 @@ public:
 class GameView : public VBoxContainer {
 	GDCLASS(GameView, VBoxContainer);
 
+#ifdef ANDROID_ENABLED
+	friend class GameViewPluginBase;
+#endif
+
 	enum {
 		CAMERA_RESET_2D,
 		CAMERA_RESET_3D,
@@ -172,6 +176,7 @@ class GameView : public VBoxContainer {
 	};
 
 	inline static GameView *singleton = nullptr;
+	inline static EditorDock *dock_singleton = nullptr;
 
 	Ref<GameViewDebugger> debugger;
 	WindowWrapper *window_wrapper = nullptr;
@@ -208,7 +213,9 @@ class GameView : public VBoxContainer {
 	Ref<ButtonGroup> n3d_group;
 
 	Button *node_type_button[RuntimeNodeSelect::NODE_TYPE_MAX];
-	Button *ci_button[CanvasItemManipulator::TOOL_MAX];
+	// Not all CI tools have buttons, so make sure the gaps are at least initialized with null.
+	Button *ci_button[CanvasItemManipulator::TOOL_MAX] = {};
+	Button *ci_local_space = nullptr;
 	Button *n3d_button[RuntimeNodeSelect::SELECT_MODE_MAX];
 
 	MenuButton *n3d_options_menu = nullptr;
@@ -309,12 +316,7 @@ protected:
 	void _notification(int p_what);
 
 public:
-	static EditorDock *get_dock() {
-		if (singleton) {
-			return singleton->game_dock;
-		}
-		return nullptr;
-	}
+	static EditorDock *get_dock() { return dock_singleton; }
 
 	void set_window_layout(Ref<ConfigFile> p_layout);
 	void get_window_layout(Ref<ConfigFile> p_layout);
@@ -329,25 +331,29 @@ class GameViewPluginBase : public EditorPlugin {
 
 #ifndef ANDROID_ENABLED
 	GameView *game_view = nullptr;
-	WindowWrapper *window_wrapper = nullptr;
 #endif // ANDROID_ENABLED
+	WindowWrapper *window_wrapper = nullptr;
 
 	Ref<GameViewDebugger> debugger;
 
-	String last_editor;
+	Label *empty_dock_info = nullptr;
 
-#ifndef ANDROID_ENABLED
 	void _window_visibility_changed(bool p_visible);
-#else
-	int previous_tab = 0;
-	void _main_screen_tab_changed(EditorDock *game_dock);
-#endif // ANDROID_ENABLED
-	void _save_last_editor(const String &p_editor);
+	void _create_empty_info_label(const String &p_message);
+
 	void _focus_another_editor();
 	bool _is_window_wrapper_enabled() const;
+	void _dock_visibility_changed(EditorDock *p_dock);
+
+#ifdef ANDROID_ENABLED
+	void _on_show_game_dock();
+#endif
 
 protected:
 	void _notification(int p_what);
+
+	static void _bind_methods();
+
 #ifndef ANDROID_ENABLED
 	void setup(Ref<GameViewDebugger> p_debugger, EmbeddedProcessBase *p_embedded_process);
 #else
@@ -360,8 +366,6 @@ public:
 	virtual bool handles(Object *p_object) const override { return false; }
 
 	Ref<GameViewDebugger> get_debugger() const { return debugger; }
-
-	virtual void make_visible(bool p_visible) override;
 
 #ifndef ANDROID_ENABLED
 	virtual void set_window_layout(Ref<ConfigFile> p_layout) override;
