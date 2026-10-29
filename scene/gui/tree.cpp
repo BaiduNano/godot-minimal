@@ -967,7 +967,10 @@ TreeItem *TreeItem::create_child(int p_index) {
 		}
 	} else {
 		first_child = ti;
-		children_cache.insert(0, ti);
+		// If the cache is empty but there are other children, it has not been built, so we cannot update it.
+		if (!children_cache.is_empty() || !ti->next) {
+			children_cache.insert(0, ti);
+		}
 	}
 
 	if (item_prev == last_child) {
@@ -5691,8 +5694,8 @@ void Tree::_notification(int p_what) {
 			}
 
 			sticky_stack_end = 0;
+			sticky_list.clear();
 			if (root && !drop_mode_flags) {
-				sticky_list.clear();
 				Vector2 stick_ofs;
 				Vector2 last_ofs = stick_ofs;
 				real_t height_limit = get_size().y * .4; // Prevent sticky items from ever exceeding 40% of the space
